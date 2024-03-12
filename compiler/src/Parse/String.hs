@@ -58,20 +58,23 @@ chompChar pos end row col numChars mostRecent =
                   if word == 0x22 {- " -}
                     then chompChar (plusPtr pos 1) end row (col + 1) (numChars + 1) doubleQuote
                     else
-                      if word == 0x5C {- \ -}
-                        then case eatEscape (plusPtr pos 1) end row col of
-                          EscapeNormal ->
-                            chompChar (plusPtr pos 2) end row (col + 2) (numChars + 1) (ES.Slice pos 2)
-                          EscapeUnicode delta code ->
-                            chompChar (plusPtr pos delta) end row (col + fromIntegral delta) (numChars + 1) (ES.CodePoint code)
-                          EscapeProblem r c badEscape ->
-                            CharEscape r c badEscape
-                          EscapeEndOfFile ->
-                            CharEndless col
+                      if word == 0x78 {- " -}
+                        then chompChar (plusPtr pos 1) end row (col + 1) (numChars + 1) doubleQuote
                         else
-                          let !width = P.getCharWidth word
-                              !newPos = plusPtr pos width
-                           in chompChar newPos end row (col + 1) (numChars + 1) (ES.Slice pos width)
+                          if word == 0x5C {- \ -}
+                            then case eatEscape (plusPtr pos 1) end row col of
+                              EscapeNormal ->
+                                chompChar (plusPtr pos 2) end row (col + 2) (numChars + 1) (ES.Slice pos 2)
+                              EscapeUnicode delta code ->
+                                chompChar (plusPtr pos delta) end row (col + fromIntegral delta) (numChars + 1) (ES.CodePoint code)
+                              EscapeProblem r c badEscape ->
+                                CharEscape r c badEscape
+                              EscapeEndOfFile ->
+                                CharEndless col
+                            else
+                              let !width = P.getCharWidth word
+                                  !newPos = plusPtr pos width
+                               in chompChar newPos end row (col + 1) (numChars + 1) (ES.Slice pos width)
 
 -- STRINGS
 
@@ -151,21 +154,27 @@ singleString pos end row col initialPos revChunks =
                        in singleString newPos end row (col + 1) newPos $
                             addEscape singleQuote initialPos pos revChunks
                     else
-                      if word == 0x5C {- \ -}
-                        then case eatEscape (plusPtr pos 1) end row col of
-                          EscapeNormal ->
-                            singleString (plusPtr pos 2) end row (col + 2) initialPos revChunks
-                          EscapeUnicode delta code ->
-                            let !newPos = plusPtr pos delta
-                             in singleString newPos end row (col + fromIntegral delta) newPos $
-                                  addEscape (ES.CodePoint code) initialPos pos revChunks
-                          EscapeProblem r c x ->
-                            Err r c (E.StringEscape x)
-                          EscapeEndOfFile ->
-                            Err row (col + 1) E.StringEndless_Single
-                        else
-                          let !newPos = plusPtr pos (P.getCharWidth word)
-                           in singleString newPos end row (col + 1) initialPos revChunks
+                      if word == 0x78 {- \x -}
+                        then
+                          let !newPos = plusPtr pos 1
+                           in singleString newPos end row (col + 1) newPos $
+                                addEscape hex initialPos pos revChunks
+                      else
+                        if word == 0x5C {- \ -}
+                          then case eatEscape (plusPtr pos 1) end row col of
+                            EscapeNormal ->
+                              singleString (plusPtr pos 2) end row (col + 2) initialPos revChunks
+                            EscapeUnicode delta code ->
+                              let !newPos = plusPtr pos delta
+                               in singleString newPos end row (col + fromIntegral delta) newPos $
+                                    addEscape (ES.CodePoint code) initialPos pos revChunks
+                            EscapeProblem r c x ->
+                              Err r c (E.StringEscape x)
+                            EscapeEndOfFile ->
+                              Err row (col + 1) E.StringEndless_Single
+                          else
+                            let !newPos = plusPtr pos (P.getCharWidth word)
+                             in singleString newPos end row (col + 1) initialPos revChunks
 
 -- MULTI STRINGS
 
@@ -235,21 +244,27 @@ multiStringBody leadingWhitespace pos end row col initialPos sr sc revChunks =
                            in dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace pos1 end row col pos1 sr sc $
                                 addEscape carriageReturn initialPos pos revChunks
                         else
-                          if word == 0x5C {- \ -}
-                            then case eatEscape (plusPtr pos 1) end row col of
-                              EscapeNormal ->
-                                dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace (plusPtr pos 2) end row (col + 2) initialPos sr sc revChunks
-                              EscapeUnicode delta code ->
-                                let !newPos = plusPtr pos delta
-                                 in dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace newPos end row (col + fromIntegral delta) newPos sr sc $
-                                      addEscape (ES.CodePoint code) initialPos pos revChunks
-                              EscapeProblem r c x ->
-                                Err r c (E.StringEscape x)
-                              EscapeEndOfFile ->
-                                Err sr sc E.StringEndless_Multi
+                          if word == 0x78 {- \x -}
+                            then
+                              let !pos1 = plusPtr pos 1
+                               in dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace pos1 end row col pos1 sr sc $
+                                    addEscape hex initialPos pos revChunks
                             else
-                              let !newPos = plusPtr pos (P.getCharWidth word)
-                               in multiStringBody leadingWhitespace newPos end row (col + 1) initialPos sr sc revChunks
+                              if word == 0x5C {- \ -}
+                                then case eatEscape (plusPtr pos 1) end row col of
+                                  EscapeNormal ->
+                                    dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace (plusPtr pos 2) end row (col + 2) initialPos sr sc revChunks
+                                  EscapeUnicode delta code ->
+                                    let !newPos = plusPtr pos delta
+                                     in dropLeadingWhiteSpaceThenMultiString 0 leadingWhitespace newPos end row (col + fromIntegral delta) newPos sr sc $
+                                          addEscape (ES.CodePoint code) initialPos pos revChunks
+                                  EscapeProblem r c x ->
+                                    Err r c (E.StringEscape x)
+                                  EscapeEndOfFile ->
+                                    Err sr sc E.StringEndless_Multi
+                                else
+                                  let !newPos = plusPtr pos (P.getCharWidth word)
+                                   in multiStringBody leadingWhitespace newPos end row (col + 1) initialPos sr sc revChunks
 
 -- ESCAPE CHARACTERS
 
@@ -270,6 +285,7 @@ eatEscape pos end row col =
       0x22 {- " -} -> EscapeNormal
       0x27 {- ' -} -> EscapeNormal
       0x5C {- \ -} -> EscapeNormal
+      0x78 {- x -} -> EscapeNormal
       0x75 {- u -} -> eatUnicode (plusPtr pos 1) end row col
       _ -> EscapeProblem row col E.EscapeUnknown
 
@@ -311,6 +327,10 @@ newline =
 carriageReturn :: ES.Chunk
 carriageReturn =
   ES.Escape 0x72 {-r-}
+
+hex :: ES.Chunk
+hex =
+  ES.Escape 0x78 {-x-}
 
 placeholder :: ES.Chunk
 placeholder =

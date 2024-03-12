@@ -3015,6 +3015,7 @@ toEscapeReport source escape row col =
                           [ "\\n",
                             "\\r",
                             "\\t",
+                            "\\x",
                             "\\\"",
                             "\\\'",
                             "\\\\",
